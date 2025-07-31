@@ -1,108 +1,56 @@
-from pydantic_ai import Agent 
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+
+#Task 5
+import gradio as gr
+from pydantic_ai import Agent
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 import os
-from pydantic_ai.models.gemini import GeminiModel
-import os
-from pydantic_ai import Agent
-from pydantic_ai.models.gemini import GeminiModel
-from typing import Optional
-
-
-provider = GoogleProvider(api_key='AIzaSyDwhZrg7OXq1RjXzsVz3grhr7Aa9XgI7-Q')
-model = GoogleModel('gemini-2.5-flash', provider=provider)
-
-agent = Agent(  
-    model,
-    system_prompt='Be concise, reply with one sentence.',  
-)
-
-result = agent.run_sync('Where does "hello world" come from?')  
-print(result.output)
-
-#TASK 1
-# Create a basic agent
-agent = Agent(model=model)
-
-# Simple conversation function
-async def chat():
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() in ['quit', 'exit']:
-            break
-
-        result = await agent.run(user_input)
-        print(f"Agent: {result.output}")
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(chat())
-
-
-#TASK 2
-# Customer service system prompt
-CUSTOMER_SERVICE_PROMPT = """
-You are a helpful customer service representative for "TechMart", an online electronics store. You are a muli-personality agent that can switch between different service roles (sales, technical support and billing) based on user need. 
-
-Your responsibilities:
-- Assist customers with product inquiries
-- Help with order status questions
-- Provide information about shipping and returns
-- Maintain a friendly, professional tone
-- If you cannot help with something, politely explain and suggest contacting human support
-
-Product categories to remember:
-- Laptop
-- Laptop charger
-- Phone
-- Phone case 
-- Phone charger
-- Earphones
-- Headphones
-
-Store policies to remember:
-- Free shipping on orders over $50
-- 30-day return policy
-- 1-year warranty on electronics
-- Customer service hours: 9 AM - 6 PM EST
-- Gift cards expire after 3 years
-
-Current store promotions:
-- Get a free product accessory on your birthday
-- £10 off any phone product for Summer
-
-Always be helpful and empathetic to customer concerns.
-"""
-
-# Create customer service agent
-customer_service_agent = Agent(
-    model=model,
-    system_prompt=CUSTOMER_SERVICE_PROMPT
-)
-
-async def customer_service_chat():
-    print("Welcome to TechMart Customer Service! How can I help you today?")
-
-    while True:
-        user_input = input("\nCustomer: ")
-        if user_input.lower() in ['quit', 'exit', 'end chat']:
-            print("Thank you for contacting TechMart! Have a great day!")
-            break
-
-        result = await customer_service_agent.run(user_input)
-        print(f"Agent: {result.output}")
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(customer_service_chat())
-
-#TASK 3
 import json
-from typing import List, Dict, Any
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.gemini import GeminiModel
 from sample_products import PRODUCT_DATA
 from difflib import get_close_matches
+
+# Mock database classes
+class Order(BaseModel):
+    order_id: str
+    customer_email: str
+    products: List[Dict]
+    total_amount: float
+    status: str
+    order_date: datetime
+    shipping_address: str
+
+class RefundRequest(BaseModel):
+    order_id: str
+    reason: str
+    amount: float
+    status: str = "pending"
+
+# Mock databases
+ORDERS_DB = {
+    "ORD-001": Order(
+        order_id="ORD-001",
+        customer_email="john@example.com",
+        products=[{"name": "TechMart Pro Laptop", "price": 899.99, "quantity": 1}],
+        total_amount=899.99,
+        status="delivered",
+        order_date=datetime.now() - timedelta(days=5),
+        shipping_address="123 Main St, Anytown, USA"
+    ),
+    "ORD-002": Order(
+        order_id="ORD-002",
+        customer_email="jane@example.com",
+        products=[{"name": "SmartPhone X Pro", "price": 799.99, "quantity": 1}],
+        total_amount=799.99,
+        status="shipped",
+        order_date=datetime.now() - timedelta(days=2),
+        shipping_address="456 Oak Ave, Somewhere, USA"
+    )
+}
 
 class ProductKnowledgeBase:
     def __init__(self, products: List[Dict]):
@@ -152,123 +100,7 @@ class ProductKnowledgeBase:
                 return product
         return None
 
-# Initialize knowledge base
 kb = ProductKnowledgeBase(PRODUCT_DATA)
-
-# Enhanced system prompt with RAG context
-RAG_SYSTEM_PROMPT = """
-You are a knowledgeable customer service representative for TechMart electronics store.
-
-When customers ask about products, you will be provided with relevant product information from our database.
-Use this information to give accurate, helpful responses about:
-- Product specifications and features
-- Pricing and availability
-- Comparisons between products
-- Recommendations based on customer needs
-
-Always base your product information on the provided data. If you don't have information about a specific product, let the customer know and offer to help them find similar items.
-
-Store policies:
-- Free shipping on orders over $50
-- 30-day return policy
-- Warranty varies by product (check product details)
-- Customer service hours: 9 AM - 6 PM EST
-"""
-
-# Create RAG-enabled agent
-def get_product_context(user_message: str) -> str:
-    """Retrieve relevant product information based on user query"""
-    # Simple keyword extraction for product search
-    search_results = kb.search_products(user_message)
-
-    if not search_results:
-        return "No specific product information found for this query."
-
-    context = "Relevant products from our database:\n\n"
-    for product in search_results:
-        context += f"**The {product['name']}** (ID: {product['id']}) is in the"
-        context += f"{product['category']} category, priced at ${product['price']}."
-        context += f"The product description is: {product['description']}."
-        context += f"It comes with features such as: {', '.join(product['features'])}"
-        context += f"The warranty period is {product['warranty']}"
-        context += f"In Stock: {'Yes' if product['in_stock'] else 'No'}"
-
-    return context
-
-rag_agent = Agent(
-    model=model,
-    system_prompt=RAG_SYSTEM_PROMPT
-)
-
-async def rag_customer_service():
-    print("Welcome to TechMart Customer Service with Product Knowledge! How can I help you?")
-
-    while True:
-        user_input = input("\nCustomer: ")
-        if user_input.lower() in ['quit', 'exit', 'end chat']:
-            print("Thank you for contacting TechMart! Have a great day!")
-            break
-
-        # Get relevant product context
-        product_context = get_product_context(user_input)
-
-        # Combine user query with context
-        enhanced_prompt = f"Customer Query: {user_input}\n\nProduct Information:\n{product_context}"
-
-        result = await rag_agent.run(enhanced_prompt)
-        print(f"Agent: {result.output}")
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(rag_customer_service())
-
-
-#Task 4
-import os
-import json
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.gemini import GeminiModel
-
-# Mock database classes
-class Order(BaseModel):
-    order_id: str
-    customer_email: str
-    products: List[Dict]
-    total_amount: float
-    status: str
-    order_date: datetime
-    shipping_address: str
-
-class RefundRequest(BaseModel):
-    order_id: str
-    reason: str
-    amount: float
-    status: str = "pending"
-
-# Mock databases
-ORDERS_DB = {
-    "ORD-001": Order(
-        order_id="ORD-001",
-        customer_email="john@example.com",
-        products=[{"name": "TechMart Pro Laptop", "price": 899.99, "quantity": 1}],
-        total_amount=899.99,
-        status="delivered",
-        order_date=datetime.now() - timedelta(days=5),
-        shipping_address="123 Main St, Anytown, USA"
-    ),
-    "ORD-002": Order(
-        order_id="ORD-002",
-        customer_email="jane@example.com",
-        products=[{"name": "SmartPhone X Pro", "price": 799.99, "quantity": 1}],
-        total_amount=799.99,
-        status="shipped",
-        order_date=datetime.now() - timedelta(days=2),
-        shipping_address="456 Oak Ave, Somewhere, USA"
-    )
-}
 
 REFUNDS_DB = {}
 
@@ -479,9 +311,10 @@ Store policies:
 """
 
 # Create agent with tools
-#model = GeminiModel('gemini-1.5-flash', api_key=os.getenv('AIzaSyDwhZrg7OXq1RjXzsVz3grhr7Aa9XgI7-Q'))
+provider = GoogleProvider(api_key='AIzaSyDwhZrg7OXq1RjXzsVz3grhr7Aa9XgI7-Q')
+model = GoogleModel('gemini-2.5-flash', provider=provider)
 
-tool_agent = Agent(
+agent = Agent(
     model=model,
     system_prompt=TOOL_SYSTEM_PROMPT,
     tools=[
@@ -494,20 +327,39 @@ tool_agent = Agent(
         check_product_availability
     ]
 )
+# --- Chat state ---
+chat_history = []
 
-async def tool_customer_service():
-    print("Welcome to TechMart Advanced Customer Service! I can help you with orders, refunds, and more.")
-    print("Available services: Check order status, process refunds, update addresses, check refund status, order cancellations, tracking orders, checking product availability")
+# --- Chat Function ---
+async def chat(user_message, history):
+    history = history or []
+    history.append({"role": "user", "content": user_message})  # use lowercase 'user'
+
+    full_prompt = "\n".join(f"{item['role']}: {item['content']}" for item in history)
+
+    # Call Gemini LLM using async Agent
+    result = await agent.run(full_prompt)
+
+    # Extract plain text from AgentRunResult
+    response = result.output if hasattr(result, 'output') else str(result)
+
+    history.append({"role": "assistant", "content": response})
+    return history, history
+
+
+# --- Gradio UI ---
+with gr.Blocks(title="Gemini Chatbot") as demo:
+    gr.Markdown("## 🤖 Gemini Chatbot with Pydantic-AI + Gradio")
     
-    while True:
-        user_input = input("\nCustomer: ")
-        if user_input.lower() in ['quit', 'exit', 'end chat']:
-            print("Thank you for contacting TechMart! Have a great day!")
-            break
+    chatbot = gr.Chatbot(type='messages')
+    msg = gr.Textbox(placeholder="Type your message here...", label="Your Message")
+    clear_btn = gr.Button("Clear")
 
-        result = await tool_agent.run(user_input)
-        print(f"Agent: {result.output}")
+    state = gr.State([])
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(tool_customer_service())
+    msg.submit(chat, inputs=[msg, state], outputs=[chatbot, state])
+    clear_btn.click(lambda: ([], []), None, [chatbot, state])
+
+# --- Launch the app ---
+demo.queue().launch()
+ 
