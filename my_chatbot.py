@@ -162,7 +162,7 @@ def delete_task(task_id: str) -> bool:
 def add_new_task(task_id: str, task_name: str, description: str, priority: str = "Medium",status: str = "pending",) -> bool:
     """Add a new task, returns False if task_id already exists or priority/status invalid."""
     if kb.get_task_by_id(task_id):
-        return False  # Task ID already exists
+        return False  
 
     valid_priorities = {'low', 'medium', 'high'}
     valid_statuses = {'pending', 'in progress', 'completed', 'on hold'}
@@ -175,7 +175,7 @@ def add_new_task(task_id: str, task_name: str, description: str, priority: str =
         "description": description,
         "priority": priority.capitalize(),
         "status": status.lower(),
-        "pending": status.lower() == "pending",  # maintain backward compatibility with your sample
+        "pending": status.lower() == "pending",  
     }
     kb.tasks.append(new_task)
     return True
