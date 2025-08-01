@@ -53,8 +53,15 @@ class ProductKnowledgeBase:
         results = []
 
         for task in self.tasks:
-            if department and task.get("department", "").lower() != department.lower():
+           if department:
+            all_departments = list(set(task.get("department", "").lower() for task in self.tasks))
+            close_matches = get_close_matches(department.lower(), all_departments, n=1, cutoff=0.6)
+            if not close_matches:
                 continue
+            matched_department = close_matches[0]
+            if task.get("department", "").lower() != matched_department:
+                continue
+
             if status and task.get("status", "").lower() != status.lower():
                 continue
             if priority and task.get("priority", "").lower() != priority.lower():
@@ -71,8 +78,12 @@ class ProductKnowledgeBase:
             if query:
                 name = task.get("task", "").lower()
                 description = task.get("description", "").lower()
+                task_id = task.get("id", "").lower()
+                fields = [name, description, task_id]
+
                 match_found = any(
-                    get_close_matches(query.lower(), [name, description], n=1, cutoff=0.7)
+                    get_close_matches(query.lower(), [field], n=1, cutoff=0.7)
+                    for field in fields
                 )
                 if not match_found:
                     continue
@@ -84,10 +95,15 @@ class ProductKnowledgeBase:
         return results
 
     def get_task_by_id(self, task_id: str) -> Optional[Dict]:
-        """Retrieve a task by its ID"""
-        for task in self.tasks:
-            if task['id'] == task_id:
-                return task
+        task_ids = [task['id'] for task in self.tasks if 'id' in task]
+        normalised_ids = [tid.upper() for tid in task_ids]
+        match = get_close_matches(task_id.upper(), normalised_ids, n=1, cutoff=0.6)
+
+        if match:
+            for task in self.tasks:
+                if task['id'].upper() == match[0]:
+                    task['matched_id'] = task['id']
+                    return task
         return None
 
 kb = ProductKnowledgeBase(TASK_DATA)
@@ -180,14 +196,36 @@ def add_reminder(reminder_time_input: str, name: Optional[str] = None, status: s
     )
     return reminder_id
 
-def get_reminders(status: Optional[str] = None) -> List[str]:
-    """Retrieve reminders with optional status filter."""
+def get_reminders(name: Optional[str] = None, status: Optional[str] = None) -> List[Reminder]:
+    """Retrieve reminders, optionally filtered by name and/or status."""
     reminders = list(REMINDERS_DB.values())
+    if name:
+        reminders = [r for r in reminders if r.name.lower() == name.lower()]
     if status:
-        reminders = [r for r in reminders if r.status == status]
+        reminders = [r for r in reminders if r.status.lower() == status.lower()]
+    return reminders
 
-    return [f"{r.name} (ID: {r.reminder_id}) - {r.reminder_time.strftime('%Y-%m-%d %H:%M:%S')}" for r in reminders]
+def update_reminder(reminder_id: Optional[str] = None, name: Optional[str] = None, 
+                    new_time: Optional[datetime] = None, new_status: Optional[str] = None) -> bool:
+    """Update a reminder by ID or name."""
+    reminder = None
 
+    if reminder_id:
+        reminder = REMINDERS_DB.get(reminder_id)
+    elif name:
+        matches = [r for r in REMINDERS_DB.values() if r.name.lower() == name.lower()]
+        if matches:
+            reminder = matches[0]
+    if not reminder:
+        return False
+    if new_time:
+        reminder.reminder_time = new_time
+    if new_status:
+        valid_statuses = {"pending", "completed", "cancelled"}
+        if new_status.lower() not in valid_statuses:
+            return False
+        reminder.status = new_status.lower()
+    return True
 
 def delete_reminder(reminder_id: str) -> bool:
     """Delete a reminder by ID."""
@@ -195,6 +233,7 @@ def delete_reminder(reminder_id: str) -> bool:
         del REMINDERS_DB[reminder_id]
         return True
     return False
+
 
 # Enhanced system prompt for tool calling
 TOOL_SYSTEM_PROMPT = """
@@ -220,11 +259,10 @@ For reminder requests, be empathetic.
 Use the following rules for better conversations:
 - When you receive user input involving tasks, determine the appropriate tool and parameters to call.
 - Always validate inputs before performing updates or additions.
-- If a task is not found or inputs are invalid, respond appropriately indicating the issue.
-- Use task IDs as provided.
+- If a task is found using fuzzy matching, respond using the correct matched task ID, not the original input.
 - Only use the tools as needed and return clear, user-friendly responses.
 - Be concise and helpful. Always confirm actions taken using the tool responses.
-- Users may specify reminder times in any format like "August 4th at 2pm", "2025-08-04T14:00", or "tomorrow at 3 PM".
+- Users may specify reminder times in any format like "August 4th at 2pm", "2025-08-04T14:00".
 - Users can optionally provide a name for a reminder. If no name is provided, generate a default using the date/time.
 - Use the add_reminder tool with reminder_time_input and name.
 - If a tool returns an error, explain why and what the user can do next.
